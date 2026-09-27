@@ -1,0 +1,8 @@
+# 构建产物
+build-linux/
+*.ipa
+smoke.swift
+# 令牌 / 敏感文件
+.gh_token
+*.log
+.DS_Store

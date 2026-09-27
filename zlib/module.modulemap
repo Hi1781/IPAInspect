@@ -1,0 +1,4 @@
+module ZInflate {
+    header "zinflate.h"
+    export *
+}
