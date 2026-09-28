@@ -77,6 +77,14 @@ final class IPAEngine {
             if let p = AnalyzerPlist.parse(plistData) { plistInfo = p }
         }
 
+        // 提取签名证书（embedded.mobileprovision）
+        progress?("解析签名证书", 0.18)
+        var signing = ProvisioningInfo.empty
+        if let prov = zip.read("\(appDir)embedded.mobileprovision") {
+            signing = AnalyzerPlist.parseProvisioning(prov)
+        }
+        result.signing = signing.hasProfile ? signing : nil
+
         // 提取主程序
         let exeName = plistInfo.name.isEmpty ? mainAppName : plistInfo.name
         let exePath = "\(appDir)\(exeName)"

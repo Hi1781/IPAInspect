@@ -12,8 +12,11 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
         title = "IPA 分析器"
         view.backgroundColor = .systemGroupedBackground
         navigationController?.navigationBar.prefersLargeTitles = true
+        let helpBtn = UIBarButtonItem(title: "帮助", style: .plain,
+                                      target: self, action: #selector(helpTapped))
         let importBtn = UIBarButtonItem(title: "导入 IPA", style: .plain,
                                         target: self, action: #selector(importTapped))
+        navigationItem.leftBarButtonItem = helpBtn
         navigationItem.rightBarButtonItem = importBtn
 
         setupSubviews()
@@ -58,6 +61,10 @@ final class HomeViewController: UIViewController, UITableViewDataSource, UITable
         tableView.reloadData()
         let has = !SampleStore.shared.allRecords().isEmpty
         emptyLabel.isHidden = has
+    }
+
+    @objc private func helpTapped() {
+        navigationController?.pushViewController(HelpViewController(), animated: true)
     }
 
     @objc private func importTapped() {

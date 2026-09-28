@@ -126,6 +126,24 @@ struct DependencyInfo: Codable {
     var note: String
 }
 
+// MARK: - 签名证书（embedded.mobileprovision）
+struct ProvisioningInfo: Codable {
+    var hasProfile: Bool
+    var appIDName: String
+    var teamIdentifier: String
+    var appIDPrefix: String
+    var expirationDate: String
+    var timeToLive: Int
+    var provisionedDevices: Int
+    var entitlements: [String: String]   // 扁平化键值
+
+    static var empty: ProvisioningInfo {
+        ProvisioningInfo(hasProfile: false, appIDName: "", teamIdentifier: "",
+                         appIDPrefix: "", expirationDate: "", timeToLive: 0,
+                         provisionedDevices: 0, entitlements: [:])
+    }
+}
+
 // MARK: - 完整分析结果
 struct AnalysisResult: Codable {
     var fileName: String
@@ -144,6 +162,7 @@ struct AnalysisResult: Codable {
     // 模块
     var plist: PlistInfo
     var machO: MachOInfo
+    var signing: ProvisioningInfo?     // embedded.mobileprovision（可选，旧存档可兼容解码）
     var strings: [StringFinding]
     var urls: [URLFinding]
     var deps: [DependencyInfo]
@@ -164,6 +183,7 @@ struct AnalysisResult: Codable {
         iconDataBase64 = nil
         plist = PlistInfo.empty
         machO = MachOInfo.empty
+        signing = nil
         strings = []; urls = []; deps = []; tree = []
         findings = []; score = 0; riskLevel = .safe
         encryptionNote = nil

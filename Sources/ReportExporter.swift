@@ -33,6 +33,27 @@ enum ReportExporter {
             s += "\n"
         }
 
+        if !r.plist.backgroundModes.isEmpty {
+            s += "## 后台模式\n\n"
+            s += "- " + r.plist.backgroundModes.joined(separator: ", ") + "\n\n"
+        }
+
+        if let sig = r.signing, sig.hasProfile {
+            s += "## 签名证书\n\n"
+            s += "- AppID 名称：\(sig.appIDName.isEmpty ? "-" : sig.appIDName)\n"
+            s += "- Team ID：\(sig.teamIdentifier.isEmpty ? "-" : sig.teamIdentifier)\n"
+            s += "- App ID 前缀：\(sig.appIDPrefix.isEmpty ? "-" : sig.appIDPrefix)\n"
+            s += "- 有效期至：\(sig.expirationDate.isEmpty ? "-" : sig.expirationDate)\n"
+            s += "- 注册设备数：\(sig.provisionedDevices)\n"
+            if !sig.entitlements.isEmpty {
+                s += "- Entitlements：\n"
+                for e in sig.entitlements.sorted(by: { $0.key < $1.key }) {
+                    s += "  - \(e.key) = \(e.value)\n"
+                }
+            }
+            s += "\n"
+        }
+
         if !r.urls.isEmpty {
             s += "## URL / IP / 域名\n\n"
             for u in r.urls.prefix(200) {

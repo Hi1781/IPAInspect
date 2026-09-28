@@ -12,7 +12,7 @@ set -euo pipefail
 APP_NAME="IPAAnalyzer"
 DEPLOY="16.0"; SDK_VER="16.4"
 TARGET="arm64-apple-ios${DEPLOY}"
-MARK_VER="1.0.0"; CUR_VER="1"
+MARK_VER="1.1.0"; CUR_VER="2"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD="${ROOT}/build-linux"

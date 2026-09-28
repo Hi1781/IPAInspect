@@ -5,7 +5,7 @@ final class ResultViewController: UIViewController {
     let resultID: String
     private(set) var result: AnalysisResult!
 
-    private let segmented = UISegmentedControl(items: ["概览", "权限", "Plist", "Mach-O", "字符串/URL", "依赖", "风险", "结构"])
+    private let segmented = UISegmentedControl(items: ["概览", "权限", "Plist", "Mach-O", "字符串", "依赖", "风险", "结构", "签名"])
     private let pageContainer = UIView()
     private var currentChild: UIViewController?
 
@@ -31,6 +31,7 @@ final class ResultViewController: UIViewController {
     private func setupLayout() {
         segmented.selectedSegmentIndex = 0
         segmented.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
+        segmented.apportionsSegmentWidthsByContent = true
         segmented.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(segmented)
 
@@ -66,7 +67,8 @@ final class ResultViewController: UIViewController {
         case 4: vc = StringsDetailVC(result: result)
         case 5: vc = DepsDetailVC(result: result)
         case 6: vc = RiskDetailVC(result: result)
-        default: vc = StructureDetailVC(result: result)
+        case 7: vc = StructureDetailVC(result: result)
+        default: vc = SignDetailVC(result: result)
         }
         addChild(vc)
         vc.view.translatesAutoresizingMaskIntoConstraints = false

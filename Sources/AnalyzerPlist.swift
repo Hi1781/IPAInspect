@@ -77,11 +77,16 @@ enum AnalyzerPlist {
         "NSRemindersUsageDescription": ("提醒事项", "可读取提醒事项，泄露隐私"),
         "NSMotionUsageDescription": ("运动与健身", "可读取运动数据"),
         "NSBluetoothAlwaysUsageDescription": ("蓝牙(始终)", "可后台扫描/连接蓝牙设备"),
+        "NSBluetoothPeripheralUsageDescription": ("蓝牙(外设)", "可连接/扫描蓝牙外设，用于跟踪设备"),
+        "NSLocalNetworkUsageDescription": ("本地网络", "可访问本地局域网，用于局域网扫描、投屏/传文件劫持"),
         "NSSpeechRecognitionUsageDescription": ("语音识别", "可上传语音进行识别，泄露谈话内容"),
         "NSFaceIDUsageDescription": ("面容ID", "可调用生物识别，需警惕滥用"),
         "NSUserTrackingUsageDescription": ("用户追踪", "可跨App追踪用户行为用于广告"),
         "NSHealthShareUsageDescription": ("健康数据", "可读取健康与健身数据"),
         "NSHealthUpdateUsageDescription": ("健康写入", "可写入健康数据"),
+        "NSSystemAdministrationUsageDescription": ("系统管理", "可进行系统级管理操作，权限过高需警惕"),
+        "NSAppleEventsUsageDescription": ("Apple事件", "可向其他App发送Apple事件，自动化操作"),
+        "NSFileProviderPresenceUsageDescription": ("文件提供者", "可常驻管理文件，需警惕数据外传"),
     ]
 
     private static func extractPermissions(_ obj: [String: Any]) -> [PermissionInfo] {
@@ -99,6 +104,8 @@ enum AnalyzerPlist {
             ("NSSiriUsageDescription", "Siri", "与 Siri 集成"),
             ("NSHomeKitUsageDescription", "HomeKit", "可访问智能家居数据"),
             ("NFCReaderUsageDescription", "NFC", "可读取 NFC 标签"),
+            ("NSUserNotificationsUsageDescription", "通知", "可发送本地通知"),
+            ("NSWidgetKitUsageDescription", "小组件", "可运行桌面小组件"),
         ]
         for (key, title, desc) in extra {
             if obj[key] != nil {
@@ -107,6 +114,141 @@ enum AnalyzerPlist {
             }
         }
         return perms.sorted { $0.key < $1.key }
+    }
+
+    // MARK: - embedded.mobileprovision 解析
+
+    /// 从 mobileprovision（DER 封装内嵌 Plist XML）中提取签名信息。
+    /// 采用正则扫描 key/value 对，兼容 binary 与 XML 两种封装。
+    static func parseProvisioning(_ data: Data) -> ProvisioningInfo {
+        var info = ProvisioningInfo.empty
+        let s = String(decoding: data, as: UTF8.self)
+        guard !s.isEmpty else { return info }
+        info.hasProfile = true
+
+        func str(_ key: String) -> String {
+            firstMatch(s, pattern: "<key>\(key)</key>\\s*<string>([^<]*)</string>") ?? ""
+        }
+        func intv(_ key: String) -> Int? {
+            firstMatch(s, pattern: "<key>\(key)</key>\\s*<integer>([^<]*)</integer>").flatMap { Int($0) }
+        }
+        func date(_ key: String) -> String {
+            guard let raw = firstMatch(s, pattern: "<key>\(key)</key>\\s*<date>([^<]*)</date>") else { return "" }
+            if let d = iso.date(from: raw) {
+                let out = DateFormatter()
+                out.dateFormat = "yyyy-MM-dd HH:mm"
+                return out.string(from: d)
+            }
+            return raw
+        }
+        func array(_ key: String) -> [String] {
+            guard let block = block(s, key: key) else { return [] }
+            return allStrings(in: block)
+        }
+
+        info.appIDName = str("AppIDName")
+        info.teamIdentifier = array("TeamIdentifier").joined(separator: "/")
+        info.appIDPrefix = array("ApplicationIdentifierPrefix").joined(separator: "/")
+        info.expirationDate = date("ExpirationDate")
+        info.timeToLive = intv("TimeToLive") ?? 0
+        info.provisionedDevices = array("ProvisionedDevices").count
+
+        // Entitlements 字典 → 扁平化
+        if let ent = entitlementsDict(s) {
+            info.entitlements = ent
+        }
+        return info
+    }
+
+    /// 提取 Entitlements 的 <dict>…</dict> 块
+    private static func entitlementsDict(_ s: String) -> [String: String]? {
+        guard let k = s.range(of: "<key>Entitlements</key>") else { return nil }
+        let tail = s[k.upperBound...]
+        guard let dopen = tail.range(of: "<dict>"), let dclose = tail.range(of: "</dict>"),
+              dopen.lowerBound < dclose.lowerBound else { return nil }
+        return scanDict(tail[dopen.upperBound..<dclose.lowerBound])
+    }
+
+    private static let iso = ISO8601DateFormatter()
+
+    /// 从整串中取 key 后紧跟的标量值块（下一个 <key> 或 </dict> 之前）
+    private static func block(_ s: String, key: String) -> Substring? {
+        guard let k = s.range(of: "<key>\(key)</key>") else { return nil }
+        let tail = s[k.upperBound...]
+        let end = tail.range(of: "<key>")?.lowerBound ?? tail.endIndex
+        return tail[tail.startIndex..<end]
+    }
+
+    private static func allStrings(in sub: Substring) -> [String] {
+        var res = [String]()
+        var rest = sub
+        while let open = rest.range(of: "<string>"), let close = rest.range(of: "</string>"),
+              open.lowerBound < close.lowerBound {
+            res.append(String(rest[open.upperBound..<close.lowerBound]))
+            rest = rest[close.upperBound...]
+        }
+        return res
+    }
+
+    /// 扫描 dict 块内的 key/标量 对（只解析 key 后紧随的标签，避免错位）
+    private static func scanDict(_ block: Substring) -> [String: String] {
+        var out = [String: String]()
+        var rest = block
+        while let ko = rest.range(of: "<key>"), let kc = rest.range(of: "</key>"),
+              ko.lowerBound < kc.lowerBound {
+            let key = String(rest[ko.upperBound..<kc.lowerBound])
+            var tail = rest[kc.upperBound...]
+            tail = Substring(tail.drop(while: { $0 == "\n" || $0 == "\t" || $0 == " " || $0 == "\r" }))
+
+            var val = ""
+            var consumed = tail.startIndex
+            if tail.hasPrefix("<true/>") {
+                val = "true"; consumed = tail.index(tail.startIndex, offsetBy: 7)
+            } else if tail.hasPrefix("<false/>") {
+                val = "false"; consumed = tail.index(tail.startIndex, offsetBy: 8)
+            } else if tail.hasPrefix("<string>") {
+                if let sc = tail.range(of: "</string>") {
+                    val = String(tail[tail.index(tail.startIndex, offsetBy: 8)..<sc.lowerBound])
+                    consumed = tail.index(sc.lowerBound, offsetBy: 9)
+                }
+            } else if tail.hasPrefix("<integer>") {
+                if let ic = tail.range(of: "</integer>") {
+                    val = String(tail[tail.index(tail.startIndex, offsetBy: 9)..<ic.lowerBound])
+                    consumed = tail.index(ic.lowerBound, offsetBy: 10)
+                }
+            } else if tail.hasPrefix("<date>") {
+                if let dc = tail.range(of: "</date>") {
+                    val = String(tail[tail.index(tail.startIndex, offsetBy: 6)..<dc.lowerBound])
+                    consumed = tail.index(dc.lowerBound, offsetBy: 7)
+                }
+            } else if tail.hasPrefix("<array>") {
+                if let ac = tail.range(of: "</array>") {
+                    val = allStrings(in: tail[tail.index(tail.startIndex, offsetBy: 7)..<ac.lowerBound]).joined(separator: ", ")
+                    consumed = tail.index(ac.lowerBound, offsetBy: 8)
+                }
+            } else if tail.hasPrefix("<data>") {
+                if let dc = tail.range(of: "</data>") {
+                    val = "<data>"
+                    consumed = tail.index(dc.lowerBound, offsetBy: 7)
+                }
+            } else if tail.hasPrefix("<dict>") {
+                if let dc = tail.range(of: "</dict>") {
+                    consumed = tail.index(dc.lowerBound, offsetBy: 7)
+                }
+            }
+            out[key] = val
+            rest = tail[consumed...]
+        }
+        return out
+    }
+
+    private static func firstMatch(_ s: String, pattern: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(s.startIndex..<s.endIndex, in: s)
+        guard let m = re.firstMatch(in: s, range: range),
+              m.numberOfRanges >= 2,
+              let r = Range(m.range(at: 1), in: s) else { return nil }
+        return String(s[r])
     }
 
     // MARK: - 通用

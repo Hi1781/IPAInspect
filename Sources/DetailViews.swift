@@ -159,6 +159,7 @@ final class OverviewDetailVC: UIViewController {
         rows.append(kvRow("权限数", "\(result.plist.permissions.count)（高危 \(result.plist.permissions.filter { $0.highRisk }.count)）"))
         rows.append(kvRow("提取 URL", "\(result.urls.count)"))
         rows.append(kvRow("依赖库", "\(result.deps.count)"))
+        rows.append(kvRow("签名证书", result.signing?.hasProfile == true ? "已包含 (embedded.mobileprovision)" : "未包含"))
         rows.append(kvRow("分析时间", result.analyzedAt))
         let rs = UIStackView(arrangedSubviews: rows.map { v in v })
         rs.axis = .vertical; rs.spacing = 6
@@ -399,6 +400,7 @@ final class StringsDetailVC: UIViewController, UITableViewDataSource, UITableVie
     private let result: AnalysisResult
     private let seg = UISegmentedControl(items: ["URL / IP / 域名", "全部字符串"])
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let emptyLabel = UILabel()
     private let search = UISearchController(searchResultsController: nil)
     private var mode = 0
     private var filtered: [(String, String)] = []
@@ -440,6 +442,19 @@ final class StringsDetailVC: UIViewController, UITableViewDataSource, UITableVie
         tableView.estimatedRowHeight = 40
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
+
+        emptyLabel.text = "没有可显示的内容"
+        emptyLabel.textAlignment = .center
+        emptyLabel.numberOfLines = 0
+        emptyLabel.textColor = .secondaryLabel
+        emptyLabel.font = .systemFont(ofSize: 14)
+        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(emptyLabel)
+        NSLayoutConstraint.activate([
+            emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 40)
+        ])
+
         NSLayoutConstraint.activate([
             seg.topAnchor.constraint(equalTo: view.topAnchor, constant: 4),
             seg.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
@@ -452,12 +467,18 @@ final class StringsDetailVC: UIViewController, UITableViewDataSource, UITableVie
         search.obscuresBackgroundDuringPresentation = false
         search.searchResultsUpdater = self
         parent?.navigationItem.searchController = search
+        updateEmpty()
+    }
+
+    private func updateEmpty() {
+        emptyLabel.isHidden = !filtered.isEmpty
     }
 
     @objc private func changed() {
         mode = seg.selectedSegmentIndex
         refreshData()
         tableView.reloadData()
+        updateEmpty()
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { filtered.count }
@@ -475,13 +496,14 @@ final class StringsDetailVC: UIViewController, UITableViewDataSource, UITableVie
 
     func updateSearchResults(for searchController: UISearchController) {
         guard let q = searchController.searchBar.text?.lowercased(), !q.isEmpty else {
-            refreshData(); tableView.reloadData(); return
+            refreshData(); tableView.reloadData(); updateEmpty(); return
         }
         filtered = (mode == 0
             ? result.urls.map { (label($0), $0.url) }
             : result.strings.map { ("[\($0.kind)]", $0.text) })
             .filter { $0.1.lowercased().contains(q) }
         tableView.reloadData()
+        updateEmpty()
     }
 }
 
@@ -598,6 +620,80 @@ final class RiskDetailVC: UITableViewController {
         cell.detailTextLabel?.text = d
         cell.detailTextLabel?.numberOfLines = 0
         cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+        return cell
+    }
+}
+
+// MARK: - 签名证书
+
+final class SignDetailVC: UITableViewController {
+    private let result: AnalysisResult
+    private var rows: [(String, String)] = []
+    private var entitlements: [(String, String)] = []
+
+    init(result: AnalysisResult) {
+        self.result = result
+        super.init(style: .insetGrouped)
+        build()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func build() {
+        guard let s = result.signing, s.hasProfile else { return }
+        rows.append(("配置文件", "embedded.mobileprovision"))
+        rows.append(("AppID 名称", s.appIDName.isEmpty ? "-" : s.appIDName))
+        rows.append(("Team ID", s.teamIdentifier.isEmpty ? "-" : s.teamIdentifier))
+        rows.append(("App ID 前缀", s.appIDPrefix.isEmpty ? "-" : s.appIDPrefix))
+        rows.append(("有效期至", s.expirationDate.isEmpty ? "-" : s.expirationDate))
+        rows.append(("TimeToLive", s.timeToLive > 0 ? "\(s.timeToLive) 天" : "-"))
+        rows.append(("注册设备数", s.provisionedDevices > 0 ? "\(s.provisionedDevices) 台" : "未限制"))
+        entitlements = s.entitlements.sorted { $0.key < $1.key }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        tableView.backgroundColor = .clear
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 60
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        (result.signing?.hasProfile ?? false) ? 2 : 1
+    }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        guard result.signing?.hasProfile == true else { return 1 }
+        return section == 0 ? rows.count : entitlements.count
+    }
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        guard result.signing?.hasProfile == true else { return nil }
+        return section == 0 ? "签名信息" : "Entitlements（\(entitlements.count)）"
+    }
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        guard result.signing?.hasProfile == true else {
+            let c = UITableViewCell(style: .default, reuseIdentifier: "e")
+            c.textLabel?.text = "包内未包含 embedded.mobileprovision（可能为开发/企业导出或未签名包）"
+            c.textLabel?.numberOfLines = 0
+            c.textLabel?.textColor = .secondaryLabel
+            return c
+        }
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: "sign")
+        if indexPath.section == 0 {
+            let r = rows[indexPath.row]
+            cell.textLabel?.text = r.0
+            cell.textLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            cell.detailTextLabel?.text = r.1
+            cell.detailTextLabel?.numberOfLines = 0
+            cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+        } else {
+            let e = entitlements[indexPath.row]
+            cell.textLabel?.text = e.0
+            cell.textLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+            cell.textLabel?.textColor = .systemOrange
+            cell.detailTextLabel?.text = e.1
+            cell.detailTextLabel?.numberOfLines = 0
+            cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+        }
         return cell
     }
 }

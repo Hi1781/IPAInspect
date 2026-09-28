@@ -127,6 +127,85 @@ enum AnalyzerRisk {
             score += 8
         }
 
+        // ---- 后台常驻模式 ----
+        let bgModes = plist.backgroundModes
+        if bgModes.contains("audio") || bgModes.contains("voip") {
+            findings.append(RiskFinding(
+                title: "后台常驻模式（\(bgModes.joined(separator: "/"))）",
+                detail: "App 声明后台 audio/voip 模式，可后台长时间运行，配合录音/上传存在窃听风险",
+                source: "UIBackgroundModes",
+                points: 10,
+                level: .suspicious,
+                suggestion: "核验后台运行用途是否必要"))
+            score += 10
+        }
+
+        // ---- 危险 URL Scheme ----
+        let dangerSchemes = plist.urlSchemes.filter { ["tel", "sms", "mailto", "facetime", "itms", "itms-apps"].contains($0.lowercased()) }
+        if !dangerSchemes.isEmpty {
+            findings.append(RiskFinding(
+                title: "注册可唤起通信类 Scheme",
+                detail: "注册了 \(dangerSchemes.joined(separator: ", ")) 等协议，可诱导拨号/发短信/发邮件",
+                source: "CFBundleURLTypes",
+                points: 5,
+                level: .low,
+                suggestion: "核验是否存在诈骗诱导场景"))
+            score += 5
+        }
+
+        // ---- 广告追踪 ----
+        let hasTracking = plist.permissions.contains { $0.key == "NSUserTrackingUsageDescription" }
+        let hasAdSupport = deps.contains { $0.name == "AdSupport" || $0.name.contains("Advert") }
+        if hasTracking || hasAdSupport {
+            findings.append(RiskFinding(
+                title: "广告追踪（IDFA）",
+                detail: hasTracking ? "声明用户追踪权限，可跨 App 追踪用户行为" : "集成 AdSupport 广告追踪库",
+                source: hasTracking ? "NSUserTrackingUsageDescription" : "AdSupport",
+                points: 6,
+                level: .low,
+                suggestion: "核验是否仅用于合规广告归因"))
+            score += 6
+        }
+
+        // ---- 本地网络 ----
+        if plist.permissions.contains(where: { $0.key == "NSLocalNetworkUsageDescription" }) {
+            findings.append(RiskFinding(
+                title: "本地网络访问",
+                detail: "申请访问本地局域网，可用于局域网扫描、设备发现，或结合其他权限发起内网攻击",
+                source: "NSLocalNetworkUsageDescription",
+                points: 12,
+                level: .suspicious,
+                suggestion: "核验局域网访问用途，警惕内网渗透"))
+            score += 12
+        }
+
+        // ---- 硬编码手机号 ----
+        let phoneCount = strings.filter { $0.kind == "phone" }.count
+        if phoneCount >= 3 {
+            findings.append(RiskFinding(
+                title: "含较多硬编码手机号",
+                detail: "扫描到 \(phoneCount) 个手机号格式字符串，可能用于诈骗/短信轰炸",
+                source: "字符串扫描",
+                points: 6,
+                level: .low,
+                suggestion: "核验这些号码的用途"))
+            score += 6
+        }
+
+        // ---- 蓝牙 + 定位组合 ----
+        let hasBT = plist.permissions.contains { $0.key == "NSBluetoothAlwaysUsageDescription" }
+        let hasLoc = plist.permissions.contains { $0.key.hasPrefix("NSLocation") }
+        if hasBT && hasLoc {
+            findings.append(RiskFinding(
+                title: "蓝牙+定位组合",
+                detail: "同时申请蓝牙与定位权限，符合近距离跟踪/信标定位特征",
+                source: "权限组合",
+                points: 14,
+                level: .suspicious,
+                suggestion: "警惕近距离跟踪场景"))
+            score += 14
+        }
+
         // ---- 依赖库风险 ----
         for dep in deps where dep.kind == "thirdparty" && dep.note.contains("逆向") {
             findings.append(RiskFinding(
