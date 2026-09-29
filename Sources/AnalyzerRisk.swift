@@ -337,6 +337,128 @@ enum AnalyzerRisk {
             score += 22
         }
 
+        // ---- 命令执行能力 ----
+        let cmdWords = ["system(", "popen(", "exec(", "/bin/sh", "/bin/bash", "NSAppleScript",
+                        "osascript", "NSTask", "Process("]
+        let cmdHits = strings.filter { t in
+            let l = t.text.lowercased()
+            return cmdWords.contains(where: { l.contains($0.lowercased()) })
+        }
+        if !cmdHits.isEmpty {
+            findings.append(RiskFinding(
+                title: "具备命令执行能力",
+                detail: "字符串含 system/popen/NSTask/osascript 等 \(cmdHits.count) 处调用，可在设备上执行系统命令",
+                source: cmdHits.prefix(3).map { $0.text }.joined(separator: "、"),
+                points: 16,
+                level: .suspicious,
+                suggestion: "合法 App 极少调用系统命令，需核验是否存在命令注入/下载执行"))
+            score += 16
+        }
+
+        // ---- WebView 动态注入 ----
+        let hasWebKit = deps.contains { $0.name == "WebKit" || $0.name == "JavaScriptCore" }
+        let injectWords = ["loadHTMLString", "evaluateJavaScript", "URLSchemeHandler",
+                           "javascript:", "WKUserContentController"]
+        let injectHits = strings.filter { t in
+            let l = t.text.lowercased()
+            return injectWords.contains(where: { l.contains($0.lowercased()) })
+        }
+        if hasWebKit && !injectHits.isEmpty {
+            findings.append(RiskFinding(
+                title: "WebView 动态内容注入",
+                detail: "集成 WebKit 且存在 loadHTMLString/evaluateJavaScript 等 \(injectHits.count) 处，可加载远程内容执行 JS",
+                source: "WebKit + 注入字符串",
+                points: 10,
+                level: .suspicious,
+                suggestion: "若加载远程页面并注入本地数据，存在钓鱼/数据外泄面"))
+            score += 10
+        }
+
+        // ---- 剪贴板读取 ----
+        let pasteHits = strings.filter { $0.text.lowercased().contains("pasteboard") }
+        if !pasteHits.isEmpty {
+            findings.append(RiskFinding(
+                title: "访问系统剪贴板",
+                detail: "引用 UIPasteboard/generalPasteboard 等 \(pasteHits.count) 处，可静默读取用户复制的敏感内容",
+                source: "UIPasteboard",
+                points: 8,
+                level: .suspicious,
+                suggestion: "剪贴板窃取常用于窃取验证码/助记词，需重点核验"))
+            score += 8
+        }
+
+        // ---- C2 / 高风险外联域名 ----
+        let c2Kws = [".onion", "t.me", "telegram", "discord", "pastebin", "paste.ee",
+                     "bit.ly", "tinyurl", "raw.githubusercontent", "dropbox", "s3.amazonaws"]
+        let c2URLs = urls.filter { u in c2Kws.contains(where: { u.url.lowercased().contains($0) }) }
+        if !c2URLs.isEmpty {
+            findings.append(RiskFinding(
+                title: "疑似 C2 / 分发外联",
+                detail: "提取到 \(c2URLs.count) 个暗网/Telegram/临时网盘/裸 Gist 类地址：\(c2URLs.prefix(4).map { $0.url }.joined(separator: "、"))",
+                source: "字符串扫描",
+                points: 16,
+                level: .suspicious,
+                suggestion: "此类地址常用于木马指令下发或样本分发，需高度警惕"))
+            score += 16
+        }
+
+        // ---- 长 Base64 编码隐藏串 ----
+        let b64Hits = strings.filter { s in
+            let t = s.text.trimmingCharacters(in: .whitespaces)
+            guard t.count >= 40 else { return false }
+            let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+            if t.rangeOfCharacter(from: allowed.inverted) != nil { return false }
+            return t.count % 4 == 0 && t.contains("=")
+        }
+        if b64Hits.count >= 2 {
+            findings.append(RiskFinding(
+                title: "疑似编码后的隐藏配置",
+                detail: "扫描到 \(b64Hits.count) 条长 Base64 字符串，可能是编码后的命令/域名/载荷",
+                source: "字符串扫描",
+                points: 10,
+                level: .suspicious,
+                suggestion: "解码核验是否隐藏指令下发或回传地址"))
+            score += 10
+        }
+
+        // ---- Bundle ID 泛化 / 伪签特征 ----
+        let bid = plist.bundleID.lowercased()
+        if bid.contains("com.example") || bid.contains("org.template") || bid.contains(".test") ||
+           bid.contains("debug") || bid.isEmpty {
+            findings.append(RiskFinding(
+                title: "Bundle ID 泛化/未上线特征",
+                detail: "Bundle ID「\(plist.bundleID)」为示例/测试样式，通常非正式上架 App",
+                source: "CFBundleIdentifier",
+                points: 4,
+                level: .low,
+                suggestion: "常见于演示包或改装包，核验来源"))
+            score += 4
+        }
+
+        // ---- 权限面过宽 ----
+        if plist.permissions.count >= 8 {
+            findings.append(RiskFinding(
+                title: "权限申请面过宽",
+                detail: "共申请 \(plist.permissions.count) 项权限，明显超出常见功能所需",
+                source: "权限集合",
+                points: 8,
+                level: .suspicious,
+                suggestion: "权限面越宽，数据窃取/攻击面越大，需重点核验"))
+            score += 8
+        }
+
+        // ---- 最低系统版本过低 ----
+        if !plist.minOS.isEmpty, plist.minOS.compare("12.0", options: .numeric) == .orderedAscending {
+            findings.append(RiskFinding(
+                title: "最低系统版本过低",
+                detail: "支持 iOS \(plist.minOS) 及以上，可在大量老旧设备运行，扩大潜在攻击范围",
+                source: "MinimumOSVersion",
+                points: 2,
+                level: .low,
+                suggestion: "通常不影响判定，仅提示受众面"))
+            score += 2
+        }
+
         let capped = min(score, 100)
         return (findings.sorted { $0.points > $1.points }, capped)
     }

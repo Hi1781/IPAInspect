@@ -29,29 +29,36 @@ final class PieChartView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
-        let side = rect.width * 0.55
-        let center = CGPoint(x: rect.width / 2, y: rect.height / 2 + 12)
-        let radius = side / 2
-        let lineW: CGFloat = min(28, radius * 0.4)
+
+        // 先给底部图例预留独立带宽，避免与圆环重叠
+        let legendCount = max(slices.count, 1)
+        let legendH = CGFloat(legendCount) * 18 + 10
+        let ringAreaH = max(rect.height - legendH, 40)
+        let center = CGPoint(x: rect.width / 2, y: ringAreaH / 2 + 4)
+        // 半径自适应：不超出宽度/高度的可用空间，保证完整可见
+        let maxR = min(rect.width * 0.34, ringAreaH / 2 - 4)
+        let radius = max(maxR, 8)
+        let lineW: CGFloat = min(24, radius * 0.4)
         let ringR = radius - lineW / 2
 
         let total = slices.reduce(0) { $0 + $1.value }
-        guard total > 0 else {
+        if total <= 0 {
             ctx.setStrokeColor(UIColor.systemGray3.cgColor)
             ctx.setLineWidth(lineW)
             ctx.addArc(center: center, radius: ringR, startAngle: 0, endAngle: .pi * 2, clockwise: false)
             ctx.strokePath()
-            return
+        } else {
+            var start: CGFloat = -.pi / 2
+            for s in slices where s.value > 0 {
+                let angle = CGFloat(s.value / total) * .pi * 2
+                ctx.setStrokeColor(s.color.cgColor)
+                ctx.setLineWidth(lineW)
+                ctx.addArc(center: center, radius: ringR, startAngle: start, endAngle: start + angle, clockwise: false)
+                ctx.strokePath()
+                start += angle
+            }
         }
-        var start: CGFloat = -.pi / 2
-        for s in slices where s.value > 0 {
-            let angle = CGFloat(s.value / total) * .pi * 2
-            ctx.setStrokeColor(s.color.cgColor)
-            ctx.setLineWidth(lineW)
-            ctx.addArc(center: center, radius: ringR, startAngle: start, endAngle: start + angle, clockwise: false)
-            ctx.strokePath()
-            start += angle
-        }
+        // 圆心总计
         ctx.setFillColor(UIColor.label.cgColor)
         let centerText = String(format: "%.0f", total) as NSString
         let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 15, weight: .bold),
@@ -60,15 +67,22 @@ final class PieChartView: UIView {
         centerText.draw(at: CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2),
                         withAttributes: attrs)
 
-        // 图例
-        var y = rect.height - CGFloat(slices.count) * 18 - 4
+        // 图例：从底部预留带向上排，文字用限定框绘制（长标签自动省略，不再溢出重叠）
+        let legendTop = rect.height - legendH
+        let swatchW: CGFloat = 10
+        let textX = rect.width * 0.12 + swatchW + 8
+        let textMaxW = rect.width * 0.88 - swatchW - 8
+        var y = legendTop + 4
         for s in slices {
             ctx.setFillColor(s.color.cgColor)
-            ctx.fillEllipse(in: CGRect(x: rect.width * 0.2, y: y + 4, width: 10, height: 10))
-            let text = "\(s.label) ×\(Int(s.value))" as NSString
-            (text as NSString).draw(at: CGPoint(x: rect.width * 0.2 + 16, y: y),
-                                    withAttributes: [.font: UIFont.systemFont(ofSize: 12),
-                                                     .foregroundColor: UIColor.secondaryLabel])
+            ctx.fillEllipse(in: CGRect(x: rect.width * 0.12, y: y + 3, width: swatchW, height: swatchW))
+            let text = "\(s.label)  ×\(Int(s.value))" as NSString
+            let para = NSMutableParagraphStyle()
+            para.lineBreakMode = .byTruncatingTail
+            let a: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12),
+                                                    .foregroundColor: UIColor.secondaryLabel,
+                                                    .paragraphStyle: para]
+            text.draw(in: CGRect(x: textX, y: y, width: textMaxW, height: 16), withAttributes: a)
             y += 18
         }
     }

@@ -46,8 +46,8 @@ final class ResultViewController: UIViewController {
             b.setTitle(title, for: .normal)
             b.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
             b.tag = i
-            b.layer.cornerRadius = 15
-            b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+            b.layer.cornerRadius = 18
+            b.contentEdgeInsets = UIEdgeInsets(top: 8, left: 22, bottom: 8, right: 22)
             b.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
             tabButtons.append(b)
             tabStack.addArrangedSubview(b)
@@ -61,7 +61,7 @@ final class ResultViewController: UIViewController {
             tabScroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
             tabScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabScroll.heightAnchor.constraint(equalToConstant: 44),
+            tabScroll.heightAnchor.constraint(equalToConstant: 48),
 
             tabStack.topAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.topAnchor),
             tabStack.leadingAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.leadingAnchor, constant: 12),
