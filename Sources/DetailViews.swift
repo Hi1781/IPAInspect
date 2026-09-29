@@ -837,7 +837,19 @@ final class DynamicAnalysisDetailVC: UITableViewController {
         tableView.backgroundColor = .clear
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 70
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "导出脚本包", style: .plain, target: self, action: #selector(exportBundle))
         rebuild()
+    }
+
+    @objc private func exportBundle() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ipa-dyn-\(UUID().uuidString.prefix(8))")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let urls = DynamicScriptGen.exportBundle(result, into: dir)
+        let ac = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        ac.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        present(ac, animated: true)
     }
 
     private func rebuild() {
@@ -904,6 +916,15 @@ final class DynamicAnalysisDetailVC: UITableViewController {
         if !related.isEmpty {
             sections.append(("与静态分析的关联", related))
         }
+
+        // 可导出的脚本文件
+        sections.append(("可导出的脚本包（右上角导出，拿来即跑）", [
+            "hook.js — Frida ObjC Hook（网络/相机/麦克风/通讯录/定位/局域网/落盘）",
+            "test_dynamic.py — Appium UI 自动化骨架（启动/授权/触发/后台）",
+            "mitm_filter.py — mitmproxy 过滤器（标记外联 + 检测凭据外传）",
+            "run_dynamic.sh — 一键编排（mitmproxy + frida + pytest）",
+            "README.txt — 步骤与免责声明"
+        ]))
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { enabled ? sections.count + 1 : 1 }

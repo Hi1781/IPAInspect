@@ -89,7 +89,7 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("风险", "0~100 评分 + 命中规则详情。"),
                 ("结构", "IPA 包文件目录树。"),
                 ("签名", "embedded.mobileprovision：开发者证书、Team ID、有效期、Entitlements（可导出签名文件）。"),
-                ("动态分析", "基于静态证据生成的动态分析计划：Frida Hook 建议 / UI 自动化流程 / 采集项（需越狱或电脑端执行）。"),
+                ("动态分析", "基于静态证据生成的动态分析计划：Frida Hook 建议 / UI 自动化流程 / 采集项（需越狱或电脑端执行；可一键导出 Frida/Appium/mitmproxy 脚本包）。"),
             ]),
             Section(title: "导入", rows: [
                 ("导入 IPA", "分析 App 安装包并生成完整静态审计报告。"),
@@ -121,7 +121,7 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("责任承担", "对目标样本的分析请确保你有合法权利；因使用本工具或其产物产生的直接或间接后果由使用者自行承担。"),
             ]),
             Section(title: "版本", rows: [
-                ("IPAInspect v1.2.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
+                ("IPAInspect v1.3.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
             ]),
         ]
     }
