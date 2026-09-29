@@ -62,6 +62,25 @@ enum ReportExporter {
             s += "\n"
         }
 
+        if let creds = r.credentials, !creds.isEmpty {
+            s += "## 凭据 / 密码\n\n"
+            for c in creds.prefix(200) {
+                s += "- [\(c.severity.label)] \(c.type)：\(c.text.prefix(120))（\(c.source)）\n"
+            }
+            s += "\n"
+        }
+
+        if let audit = r.resourceAudit, !audit.isEmpty {
+            s += "## 内容审查（多文件）\n\n"
+            for a in audit.prefix(100) {
+                s += "- **[\(a.severity.label)] \(a.path)**\n"
+                for f in a.findings.prefix(20) {
+                    s += "  - \(f)\n"
+                }
+            }
+            s += "\n"
+        }
+
         if !r.deps.isEmpty {
             s += "## 依赖库\n\n"
             for d in r.deps {

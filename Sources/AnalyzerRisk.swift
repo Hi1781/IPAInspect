@@ -4,35 +4,117 @@ import Foundation
 enum AnalyzerRisk {
 
     static func evaluate(plist: PlistInfo, machO: MachOInfo,
-                         strings: [StringFinding], urls: [URLFinding],
+                         strings: [StringFinding], credentials: [CredentialFinding],
+                         resources: [ResourceFinding], urls: [URLFinding],
                          deps: [DependencyInfo]) -> (findings: [RiskFinding], score: Int) {
         var findings = [RiskFinding]()
         var score = 0
 
-        // ---- 权限风险 ----
+        // ---- 权限风险（声明本身仅低风险，须结合证据才升级）----
         let highPerms = plist.permissions.filter { $0.highRisk }
+        let hasExfil = credentials.contains { $0.severity.rawValue >= 3 }
+            || urls.contains { $0.kind != "https" }
+            || strings.contains { $0.text.lowercased().contains("upload") }
+            || resources.contains { $0.severity.rawValue >= 3 }
         if !highPerms.isEmpty {
             for p in highPerms {
+                // 单条声明：仅低风险（避免“有权限就高危”）
+                let isSensitive = ["NSCameraUsageDescription", "NSMicrophoneUsageDescription",
+                                   "NSPhotoLibraryUsageDescription", "NSContactsUsageDescription",
+                                   "NSLocationAlwaysUsageDescription", "NSLocalNetworkUsageDescription"].contains(p.key)
+                let points = isSensitive ? 4 : 2
+                let level: RiskLevel = isSensitive ? .low : .safe
                 findings.append(RiskFinding(
-                    title: "敏感权限：\(p.title)",
-                    detail: p.detail,
+                    title: "声明敏感权限：\(p.title)",
+                    detail: p.detail + (hasExfil ? "；且检测到数据外传迹象（上传/非HTTPS外链/凭据），风险升级" : "（单独声明本身不必然恶意，需结合行为判断）"),
                     source: p.key,
-                    points: 8,
-                    level: .suspicious,
-                    suggestion: "评估该权限是否与功能必要匹配；勒索木马常滥用相册/通讯录/麦克风权限"))
-                score += 8
+                    points: points,
+                    level: level,
+                    suggestion: "结合是否存在数据外传逻辑综合判断；勒索木马常滥用相册/通讯录/麦克风权限"))
+                score += points
             }
-            if highPerms.count >= 3 {
+            // 权限 + 数据外传证据 → 升级
+            if !highPerms.isEmpty && hasExfil {
                 let names = highPerms.map { $0.title }.joined(separator: "、")
                 findings.append(RiskFinding(
-                    title: "高危权限组合",
-                    detail: "同时申请 \(names) 等多个隐私权限，符合窃取型木马特征",
-                    source: "权限组合",
-                    points: 20,
-                    level: .malicious,
-                    suggestion: "需重点核验是否存在窃取个人信息的恶意行为"))
-                score += 20
+                    title: "敏感权限 + 数据外传迹象",
+                    detail: "同时声明 \(names) 且存在上传/非HTTPS外链/硬编码凭据等证据，符合窃取型特征",
+                    source: "权限 + 行为证据",
+                    points: 18,
+                    level: .suspicious,
+                    suggestion: "重点核验是否存在窃取并回传个人信息的恶意行为"))
+                score += 18
             }
+            if highPerms.count >= 4 {
+                let names = highPerms.map { $0.title }.joined(separator: "、")
+                findings.append(RiskFinding(
+                    title: "异常高危权限堆叠",
+                    detail: "同时申请 \(names) 等 4 个以上隐私权限，申请面异常宽泛",
+                    source: "权限组合",
+                    points: 12,
+                    level: .suspicious,
+                    suggestion: "核验权限申请是否远超功能所需"))
+                score += 12
+            }
+        }
+
+        // ---- 凭据 / 硬编码密码 ----
+        if !credentials.isEmpty {
+            let critical = credentials.filter { $0.severity == .critical }
+            let high = credentials.filter { $0.severity == .high }
+            if !critical.isEmpty {
+                findings.append(RiskFinding(
+                    title: "发现硬编码私钥/机密",
+                    detail: "提取到 \(critical.count) 条高危凭据（私钥/JWT/Secret 等）：\(critical.prefix(3).map { $0.text.prefix(40) }.joined(separator: "、"))",
+                    source: "凭据扫描",
+                    points: 24,
+                    level: .malicious,
+                    suggestion: "硬编码密钥一旦泄露即不可信，需立即轮换"))
+                score += 24
+            } else if !high.isEmpty {
+                findings.append(RiskFinding(
+                    title: "发现硬编码密码/令牌",
+                    detail: "提取到 \(high.count) 条高危险级凭据（密码/API Key/Token 等），\(high.prefix(3).map { $0.text.prefix(30) }.joined(separator: "、"))",
+                    source: "凭据扫描",
+                    points: 14,
+                    level: .suspicious,
+                    suggestion: "应将凭据放入后端或钥匙串，不应硬编码在客户端"))
+                score += 14
+            } else {
+                findings.append(RiskFinding(
+                    title: "存在疑似凭据字符串",
+                    detail: "提取到 \(credentials.count) 条疑似凭据，需人工核验",
+                    source: "凭据扫描",
+                    points: 6,
+                    level: .low,
+                    suggestion: "逐一核验是否真为敏感凭据"))
+                score += 6
+            }
+        }
+
+        // ---- 内容审查（多文件）----
+        let criticalFiles = resources.filter { $0.severity == .critical }
+        let highFiles = resources.filter { $0.severity == .high }
+        if !criticalFiles.isEmpty {
+            let names = criticalFiles.map { $0.path }.joined(separator: "、")
+            findings.append(RiskFinding(
+                title: "配置文件暴露高危机密",
+                detail: "以下文件含私钥/密码等机密：\(names)",
+                source: "内容审查",
+                points: 22,
+                level: .malicious,
+                suggestion: "立即处理暴露的机密"))
+            score += 22
+        } else if !highFiles.isEmpty {
+            let names = highFiles.prefix(4).map { $0.path }.joined(separator: "、")
+            findings.append(RiskFinding(
+                title: "资源文件含敏感信息",
+                detail: "\(names) 等 \(highFiles.count) 个文件含凭据/内网IP/明文HTTP等敏感内容",
+                source: "内容审查",
+                points: 12,
+                level: .suspicious,
+                suggestion: "核验这些敏感信息是否应出现在客户端包内"))
+            score += 12
         }
 
         // ---- ATS 明文传输 ----

@@ -82,6 +82,7 @@ final class IPAEngine {
         var signing = ProvisioningInfo.empty
         if let prov = zip.read("\(appDir)embedded.mobileprovision") {
             signing = AnalyzerPlist.parseProvisioning(prov)
+            result.provisioningDataBase64 = prov.base64EncodedString()
         }
         result.signing = signing.hasProfile ? signing : nil
 
@@ -138,6 +139,15 @@ final class IPAEngine {
             }
         }
         result.urls = Array(urls.prefix(800))
+
+        // 凭据 / 密码提取
+        progress?("提取凭据", 0.6)
+        result.credentials = AnalyzerStrings.extractCredentials(from: Array(result.strings), source: "主程序")
+
+        // 深入内容审查：扫描包内多个文本/配置文件
+        progress?("内容审查", 0.66)
+        let audit = contentAudit(zip: zip, appDir: appDir, machO: machOData!)
+        result.resourceAudit = audit.isEmpty ? nil : audit
 
         progress?("提取依赖库", 0.7)
         var deps = [DependencyInfo]()
@@ -201,7 +211,10 @@ final class IPAEngine {
         // 风险
         progress?("风险评分", 0.92)
         let risk = AnalyzerRisk.evaluate(plist: plistInfo, machO: machOInfo,
-                                         strings: Array(result.strings), urls: result.urls, deps: deps)
+                                         strings: Array(result.strings),
+                                         credentials: result.credentials ?? [],
+                                         resources: result.resourceAudit ?? [],
+                                         urls: result.urls, deps: deps)
         result.findings = risk.findings
         result.score = risk.score
         result.riskLevel = RiskLevel.fromScore(risk.score)
@@ -210,6 +223,71 @@ final class IPAEngine {
 
         progress?("完成", 1.0)
         return result
+    }
+
+    // MARK: - 内容审查（扫描包内文本/配置文件，做逐文件结论）
+
+    private func contentAudit(zip: ZipReader, appDir: String, machO: Data) -> [ResourceFinding] {
+        var audit = [ResourceFinding]()
+        // 主程序（已单独扫描）
+        let exeFindings = AnalyzerStrings.scan(machO)
+        let exeSens = sensitiveHits(exeFindings)
+        if !exeSens.isEmpty {
+            audit.append(ResourceFinding(path: "主程序", severity: .high, findings: exeSens))
+        }
+        // 包内文本/配置类文件（限制大小与数量避免卡顿）
+        let textExt = [".plist", ".json", ".js", ".html", ".htm", ".txt", ".conf", ".config", ".xml", ".properties", ".ini"]
+        let sensExt = [".mobileprovision", ".entitlements"]
+        var scanned = 0
+        for e in zip.entries where !e.isDirectory {
+            let lower = e.name.lowercased()
+            let isText = textExt.contains { lower.hasSuffix($0) }
+            let isSensExt = sensExt.contains { lower.hasSuffix($0) }
+            if !isText && !isSensExt { continue }
+            if e.uncompSize > 400_000 { continue }                 // 跳过过大文件
+            if e.name.contains("Frameworks/") || e.name.contains("PlugIns/") { continue }
+            guard let data = zip.read(e.name), data.count <= 400_000 else { continue }
+            scanned += 1
+            if scanned > 120 { break }
+            let findings = AnalyzerStrings.scan(data, maxTotal: 500)
+            let hits = sensitiveHits(findings)
+            if !hits.isEmpty {
+                let rel = e.name.replacingOccurrences(of: appDir, with: "")
+                let sev: Severity = hits.contains { $0.contains("凭据") || $0.contains("私钥") || $0.contains("password") } ? .critical : .high
+                audit.append(ResourceFinding(path: rel.isEmpty ? e.name : rel, severity: sev, findings: hits))
+            }
+        }
+        return audit
+    }
+
+    /// 敏感命中描述
+    private func sensitiveHits(_ findings: [StringFinding]) -> [String] {
+        var hits = [String]()
+        var seen = Set<String>()
+        for f in findings.prefix(600) {
+            var tag: String? = nil
+            let lower = f.text.lowercased()
+            if f.kind == "key" || lower.contains("password") || lower.contains("secret") || lower.contains("token") ||
+               lower.contains("api_key") || lower.contains("bearer") || lower.contains("-----begin") || lower.contains("jwt") {
+                tag = "疑似凭据：\(f.text.prefix(60))"
+            } else if f.kind == "ip" && AnalyzerStrings.isPrivateIP(f.text) {
+                tag = "内网IP：\(f.text)"
+            } else if f.kind == "http" {
+                tag = "明文HTTP：\(f.text.prefix(80))"
+            } else if f.kind == "email" {
+                tag = "邮箱：\(f.text)"
+            } else if f.kind == "phone" {
+                tag = "手机号：\(f.text)"
+            } else if f.kind == "domain" && (lower.contains("upload") || lower.contains("track") || lower.contains("collect") || lower.contains("telemetry")) {
+                tag = "可疑域名：\(f.text)"
+            }
+            if let t = tag, !seen.contains(f.text) {
+                seen.insert(f.text)
+                hits.append(t)
+            }
+            if hits.count >= 20 { break }
+        }
+        return hits
     }
 
     // MARK: - 图标提取

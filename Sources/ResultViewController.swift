@@ -1,11 +1,14 @@
 import UIKit
 
-/// 分析结果页：顶部卡片 + 分段页签 + 各详情子页
+/// 分析结果页：顶部可滚动页签栏 + 各详情子页
 final class ResultViewController: UIViewController {
     let resultID: String
     private(set) var result: AnalysisResult!
 
-    private let segmented = UISegmentedControl(items: ["概览", "权限", "Plist", "Mach-O", "字符串", "依赖", "风险", "结构", "签名"])
+    private let tabTitles = ["概览", "权限", "Plist", "MachO", "字符串", "依赖", "风险", "结构", "签名", "动态分析"]
+    private let tabScroll = UIScrollView()
+    private let tabStack = UIStackView()
+    private var tabButtons: [UIButton] = []
     private let pageContainer = UIView()
     private var currentChild: UIViewController?
 
@@ -25,34 +28,66 @@ final class ResultViewController: UIViewController {
         navigationItem.rightBarButtonItems = [share, del]
 
         setupLayout()
-        switchPage(0)
+        selectTab(0)
     }
 
     private func setupLayout() {
-        segmented.selectedSegmentIndex = 0
-        segmented.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
-        segmented.apportionsSegmentWidthsByContent = true
-        segmented.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(segmented)
+        tabScroll.showsHorizontalScrollIndicator = false
+        tabScroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tabScroll)
+
+        tabStack.axis = .horizontal
+        tabStack.spacing = 6
+        tabStack.translatesAutoresizingMaskIntoConstraints = false
+        tabScroll.addSubview(tabStack)
+
+        for (i, title) in tabTitles.enumerated() {
+            let b = UIButton(type: .system)
+            b.setTitle(title, for: .normal)
+            b.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+            b.tag = i
+            b.layer.cornerRadius = 15
+            b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+            b.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+            tabButtons.append(b)
+            tabStack.addArrangedSubview(b)
+        }
 
         pageContainer.translatesAutoresizingMaskIntoConstraints = false
         pageContainer.backgroundColor = .systemGroupedBackground
         view.addSubview(pageContainer)
 
         NSLayoutConstraint.activate([
-            segmented.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            segmented.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            segmented.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            tabScroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            tabScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tabScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tabScroll.heightAnchor.constraint(equalToConstant: 44),
 
-            pageContainer.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 4),
+            tabStack.topAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.topAnchor),
+            tabStack.leadingAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.leadingAnchor, constant: 12),
+            tabStack.trailingAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.trailingAnchor, constant: -12),
+            tabStack.bottomAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.bottomAnchor),
+            tabStack.heightAnchor.constraint(equalTo: tabScroll.frameLayoutGuide.heightAnchor),
+
+            pageContainer.topAnchor.constraint(equalTo: tabScroll.bottomAnchor, constant: 2),
             pageContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             pageContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             pageContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
-    @objc private func segmentChanged() {
-        switchPage(segmented.selectedSegmentIndex)
+    @objc private func tabTapped(_ sender: UIButton) {
+        selectTab(sender.tag)
+    }
+
+    private func selectTab(_ index: Int) {
+        for (i, b) in tabButtons.enumerated() {
+            let selected = i == index
+            b.backgroundColor = selected ? .systemIndigo : .secondarySystemGroupedBackground
+            b.setTitleColor(selected ? .white : .label, for: .normal)
+            b.tintColor = .clear
+        }
+        switchPage(index)
     }
 
     private func switchPage(_ index: Int) {
@@ -68,7 +103,8 @@ final class ResultViewController: UIViewController {
         case 5: vc = DepsDetailVC(result: result)
         case 6: vc = RiskDetailVC(result: result)
         case 7: vc = StructureDetailVC(result: result)
-        default: vc = SignDetailVC(result: result)
+        case 8: vc = SignDetailVC(result: result)
+        default: vc = DynamicAnalysisDetailVC(result: result)
         }
         addChild(vc)
         vc.view.translatesAutoresizingMaskIntoConstraints = false
@@ -81,6 +117,11 @@ final class ResultViewController: UIViewController {
         ])
         vc.didMove(toParent: self)
         currentChild = vc
+        // 滚动到所选页签可见
+        if index < tabButtons.count {
+            let target = tabButtons[index]
+            tabScroll.scrollRectToVisible(target.convert(target.bounds, to: tabScroll), animated: true)
+        }
     }
 
     // MARK: - 操作

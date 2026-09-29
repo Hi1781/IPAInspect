@@ -33,6 +33,50 @@ enum RiskLevel: Int, Codable {
     }
 }
 
+// MARK: - 逐项危险等级（用于字符串/依赖/结构/签名等每条内容的标签）
+enum Severity: Int, Codable {
+    case safe = 0
+    case low = 1
+    case medium = 2
+    case high = 3
+    case critical = 4
+
+    var label: String {
+        switch self {
+        case .safe: return "安全"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .critical: return "危险"
+        }
+    }
+
+    var colorIndex: Int {
+        switch self {
+        case .safe: return 0      // 绿
+        case .low: return 1       // 青
+        case .medium: return 2    // 黄
+        case .high: return 3      // 橙
+        case .critical: return 4  // 红
+        }
+    }
+}
+
+// MARK: - 凭据 / 密码发现
+struct CredentialFinding: Codable {
+    var text: String
+    var type: String          // password / apiKey / token / secret / privateKey / jwt / bearer / base64
+    var source: String        // 来源（主程序 / 资源文件路径）
+    var severity: Severity
+}
+
+// MARK: - 资源内容审查（扫描多个文件后的逐文件结论）
+struct ResourceFinding: Codable {
+    var path: String
+    var severity: Severity
+    var findings: [String]    // 该文件命中的敏感项描述
+}
+
 // MARK: - 单项风险发现
 struct RiskFinding: Codable {
     var title: String
@@ -163,7 +207,10 @@ struct AnalysisResult: Codable {
     var plist: PlistInfo
     var machO: MachOInfo
     var signing: ProvisioningInfo?     // embedded.mobileprovision（可选，旧存档可兼容解码）
+    var provisioningDataBase64: String? // 原始 mobileprovision，用于分离导出
     var strings: [StringFinding]
+    var credentials: [CredentialFinding]?  // 提取的凭据/密码
+    var resourceAudit: [ResourceFinding]?  // 多文件内容审查
     var urls: [URLFinding]
     var deps: [DependencyInfo]
     var tree: [ZipEntryInfo]
@@ -184,7 +231,9 @@ struct AnalysisResult: Codable {
         plist = PlistInfo.empty
         machO = MachOInfo.empty
         signing = nil
-        strings = []; urls = []; deps = []; tree = []
+        provisioningDataBase64 = nil
+        strings = []; credentials = nil; resourceAudit = nil
+        urls = []; deps = []; tree = []
         findings = []; score = 0; riskLevel = .safe
         encryptionNote = nil
     }

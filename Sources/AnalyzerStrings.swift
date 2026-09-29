@@ -138,4 +138,81 @@ enum AnalyzerStrings {
         if parts[0] == 0 || parts[0] == 169 { return true }
         return false
     }
+
+    // MARK: - 凭据 / 密码提取
+
+    /// 从字符串发现中筛出疑似凭据（密码/API Key/Token/密钥/JWT 等）
+    static func extractCredentials(from findings: [StringFinding], source: String) -> [CredentialFinding] {
+        var creds = [CredentialFinding]()
+        var seen = Set<String>()
+        for f in findings {
+            let t = f.text
+            if seen.contains(t) { continue }
+            let lower = t.lowercased()
+            var type: String? = nil
+            var sev: Severity = .medium
+
+            if lower.contains("-----begin") || lower.contains("private key") || lower.contains("rsa private") ||
+               lower.hasPrefix("-----") || t.contains("MII") || lower.contains("sha256withrsa") {
+                type = "privateKey"; sev = .critical
+            } else if lower.contains("password=") || lower.contains("passwd=") || lower.contains("pwd=") ||
+                      lower.contains("password:") || lower == "password" {
+                type = "password"; sev = .high
+            } else if lower.contains("api_key") || lower.contains("apikey") || lower.contains("api-key") ||
+                      lower.contains("appid") || lower.contains("app_id") {
+                type = "apiKey"; sev = .high
+            } else if lower.contains("access_token") || lower.contains("token=") || lower.contains("refresh_token") {
+                type = "token"; sev = .high
+            } else if lower.contains("client_secret") || lower.contains("secret=") || lower.contains("consumer_secret") {
+                type = "secret"; sev = .critical
+            } else if lower.contains("bearer ") || (lower.contains("jwt") && t.count > 40) {
+                type = "bearer"; sev = .high
+            } else if looksLikeJWT(t) {
+                type = "jwt"; sev = .critical
+            } else if f.kind == "key" && t.count >= 24 {
+                type = "secret"; sev = .medium
+            } else if looksLikeBase64(t) && t.count >= 20 {
+                type = "base64"; sev = .medium
+            }
+
+            if let ty = type {
+                seen.insert(t)
+                creds.append(CredentialFinding(text: t, type: ty, source: source, severity: sev))
+            }
+        }
+        return creds.sorted { $0.severity.rawValue > $1.severity.rawValue }
+    }
+
+    private static func looksLikeJWT(_ s: String) -> Bool {
+        let parts = s.split(separator: ".")
+        guard parts.count == 3 else { return false }
+        return s.count > 60 && s.count < 4000
+    }
+
+    private static func looksLikeBase64(_ s: String) -> Bool {
+        guard s.count >= 16 else { return false }
+        let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+        return s.filter { allowed.contains($0) }.count == s.count
+    }
+
+    /// 字符串逐项危险等级
+    static func severity(kind: String, text: String) -> Severity {
+        let lower = text.lowercased()
+        switch kind {
+        case "http": return .high
+        case "ip":
+            return isPrivateIP(text) ? .critical : .high
+        case "domain": return .medium
+        case "email": return .medium
+        case "phone": return .medium
+        case "key": return looksLikeJWT(text) ? .critical : (text.count >= 24 ? .high : .medium)
+        case "path": return .low
+        case "url": return .medium
+        default:
+            if lower.contains("password") || lower.contains("secret") || lower.contains("token") || lower.contains("api_key") { return .high }
+            if lower.contains("upload") || lower.contains("/api/") || lower.contains("webhook") || lower.contains("callback") { return .medium }
+            if lower.contains("http://") { return .high }
+            return .low
+        }
+    }
 }

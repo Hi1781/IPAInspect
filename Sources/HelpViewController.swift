@@ -79,7 +79,7 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("③ 等待解析", "大型包需几秒到几十秒，顶部有进度提示。"),
                 ("④ 查看结果", "完成后自动进入结果页，本次结果自动保存到样本库。"),
             ]),
-            Section(title: "阅读分析结果（9 个页签）", rows: [
+            Section(title: "阅读分析结果（10 个页签）", rows: [
                 ("概览", "图标、哈希(MD5/SHA1/SHA256/SHA512)、Bundle ID、版本、风险标签、权限饼图、评分。"),
                 ("权限", "申请的隐私权限清单，高危权限红色标注 + 风险说明。"),
                 ("Plist", "Info.plist 全量字段，可搜索。"),
@@ -88,7 +88,12 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("依赖", "系统 / 三方 / 内嵌库分类，识别逆向相关库。"),
                 ("风险", "0~100 评分 + 命中规则详情。"),
                 ("结构", "IPA 包文件目录树。"),
-                ("签名", "embedded.mobileprovision：开发者证书、Team ID、有效期、Entitlements。"),
+                ("签名", "embedded.mobileprovision：开发者证书、Team ID、有效期、Entitlements（可导出签名文件）。"),
+                ("动态分析", "基于静态证据生成的动态分析计划：Frida Hook 建议 / UI 自动化流程 / 采集项（需越狱或电脑端执行）。"),
+            ]),
+            Section(title: "导入", rows: [
+                ("导入 IPA", "分析 App 安装包并生成完整静态审计报告。"),
+                ("导入分析报告(JSON)", "直接解析本应用导出的 .analysis.json 报告入库，无需重新分析。"),
             ]),
             Section(title: "导出与样本库", rows: [
                 ("导出报告", "结果页右上角分享：Markdown + JSON 审计报告。"),
@@ -116,7 +121,7 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("责任承担", "对目标样本的分析请确保你有合法权利；因使用本工具或其产物产生的直接或间接后果由使用者自行承担。"),
             ]),
             Section(title: "版本", rows: [
-                ("IPAInspect v1.1.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
+                ("IPAInspect v1.2.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
             ]),
         ]
     }
