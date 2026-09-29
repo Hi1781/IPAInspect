@@ -121,7 +121,7 @@ final class HelpViewController: UIViewController, UITableViewDataSource {
                 ("责任承担", "对目标样本的分析请确保你有合法权利；因使用本工具或其产物产生的直接或间接后果由使用者自行承担。"),
             ]),
             Section(title: "版本", rows: [
-                ("IPAInspect v1.4.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
+                ("IPAInspect v1.5.0", "本地离线 IPA 静态分析器（iOS 侧载版）。本项目仅用于合法的应用安全研究与学习。"),
             ]),
         ]
     }

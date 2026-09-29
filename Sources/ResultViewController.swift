@@ -1,14 +1,15 @@
 import UIKit
 
-/// 分析结果页：顶部可滚动页签栏 + 各详情子页
+/// 分析结果页：顶部等分横铺页签栏（选中词条变宽）+ 各详情子页
 final class ResultViewController: UIViewController {
     let resultID: String
     private(set) var result: AnalysisResult!
 
     private let tabTitles = ["概览", "权限", "Plist", "MachO", "字符串", "依赖", "风险", "结构", "签名", "动态分析"]
-    private let tabScroll = UIScrollView()
-    private let tabStack = UIStackView()
+    private let tabBar = UIStackView()
     private var tabButtons: [UIButton] = []
+    private var tabWidths: [NSLayoutConstraint] = []
+    private var selectedIndex = 0
     private let pageContainer = UIView()
     private var currentChild: UIViewController?
 
@@ -32,25 +33,27 @@ final class ResultViewController: UIViewController {
     }
 
     private func setupLayout() {
-        tabScroll.showsHorizontalScrollIndicator = false
-        tabScroll.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(tabScroll)
-
-        tabStack.axis = .horizontal
-        tabStack.spacing = 6
-        tabStack.translatesAutoresizingMaskIntoConstraints = false
-        tabScroll.addSubview(tabStack)
+        tabBar.axis = .horizontal
+        tabBar.spacing = 5
+        tabBar.distribution = .fill
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tabBar)
 
         for (i, title) in tabTitles.enumerated() {
             let b = UIButton(type: .system)
             b.setTitle(title, for: .normal)
             b.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+            b.titleLabel?.adjustsFontSizeToFitWidth = true
+            b.titleLabel?.minimumScaleFactor = 0.5
             b.tag = i
-            b.layer.cornerRadius = 18
-            b.contentEdgeInsets = UIEdgeInsets(top: 8, left: 22, bottom: 8, right: 22)
+            b.layer.cornerRadius = 15
+            b.contentEdgeInsets = UIEdgeInsets(top: 7, left: 4, bottom: 7, right: 4)
             b.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+            let wc = b.widthAnchor.constraint(equalToConstant: 1)
+            wc.isActive = true
             tabButtons.append(b)
-            tabStack.addArrangedSubview(b)
+            tabWidths.append(wc)
+            tabBar.addArrangedSubview(b)
         }
 
         pageContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -58,22 +61,40 @@ final class ResultViewController: UIViewController {
         view.addSubview(pageContainer)
 
         NSLayoutConstraint.activate([
-            tabScroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
-            tabScroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tabScroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabScroll.heightAnchor.constraint(equalToConstant: 48),
+            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            tabBar.heightAnchor.constraint(equalToConstant: 44),
 
-            tabStack.topAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.topAnchor),
-            tabStack.leadingAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.leadingAnchor, constant: 12),
-            tabStack.trailingAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.trailingAnchor, constant: -12),
-            tabStack.bottomAnchor.constraint(equalTo: tabScroll.contentLayoutGuide.bottomAnchor),
-            tabStack.heightAnchor.constraint(equalTo: tabScroll.frameLayoutGuide.heightAnchor),
-
-            pageContainer.topAnchor.constraint(equalTo: tabScroll.bottomAnchor, constant: 2),
+            pageContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: 2),
             pageContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             pageContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             pageContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if tabBar.bounds.width > 0 {
+            layoutTabWidths(selected: selectedIndex)
+        }
+    }
+
+    /// 等分横铺 + 选中词条变宽（手风琴），总宽恒等于可用宽度
+    private func layoutTabWidths(selected: Int, animated: Bool = false) {
+        let total = tabBar.bounds.width - tabBar.spacing * CGFloat(tabButtons.count - 1)
+        guard total > 0, !tabWidths.isEmpty else { return }
+        let n = CGFloat(tabWidths.count)
+        let inactiveW = max(total / (n + 1.2), 30)       // 选中项额外多占 ~20% 总量
+        let selectedW = total - inactiveW * (n - 1)
+        for (i, c) in tabWidths.enumerated() {
+            c.constant = (i == selected) ? max(selectedW, inactiveW) : inactiveW
+        }
+        if animated {
+            UIView.animate(withDuration: 0.22) { self.view.layoutIfNeeded() }
+        } else {
+            view.layoutIfNeeded()
+        }
     }
 
     @objc private func tabTapped(_ sender: UIButton) {
@@ -81,12 +102,14 @@ final class ResultViewController: UIViewController {
     }
 
     private func selectTab(_ index: Int) {
+        selectedIndex = index
         for (i, b) in tabButtons.enumerated() {
             let selected = i == index
             b.backgroundColor = selected ? .systemIndigo : .secondarySystemGroupedBackground
             b.setTitleColor(selected ? .white : .label, for: .normal)
             b.tintColor = .clear
         }
+        layoutTabWidths(selected: index, animated: true)
         switchPage(index)
     }
 
@@ -117,11 +140,6 @@ final class ResultViewController: UIViewController {
         ])
         vc.didMove(toParent: self)
         currentChild = vc
-        // 滚动到所选页签可见
-        if index < tabButtons.count {
-            let target = tabButtons[index]
-            tabScroll.scrollRectToVisible(target.convert(target.bounds, to: tabScroll), animated: true)
-        }
     }
 
     // MARK: - 操作

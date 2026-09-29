@@ -603,7 +603,7 @@ final class RiskDetailVC: UITableViewController {
         view.backgroundColor = .clear
         tableView.backgroundColor = .clear
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 90
+        tableView.estimatedRowHeight = 140
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { result.findings.isEmpty ? 1 : 2 }
@@ -630,6 +630,8 @@ final class RiskDetailVC: UITableViewController {
             let desc = lvl.map { "≥\($0.0)=\($0.1)" }.joined(separator: "  ")
             cell.detailTextLabel?.text = "分级阈值：" + desc
             cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+            cell.detailTextLabel?.numberOfLines = 0
+            cell.detailTextLabel?.lineBreakMode = .byWordWrapping
             return cell
         }
         let f = result.findings[indexPath.row]
@@ -638,10 +640,12 @@ final class RiskDetailVC: UITableViewController {
         cell.textLabel?.textColor = UITheme.riskColor(f.level)
         cell.textLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
         cell.textLabel?.numberOfLines = 0
+        cell.textLabel?.lineBreakMode = .byWordWrapping
         let d = "证据：\(f.source)\n\(f.detail)\n建议：\(f.suggestion)"
         cell.detailTextLabel?.text = d
         cell.detailTextLabel?.numberOfLines = 0
         cell.detailTextLabel?.font = .systemFont(ofSize: 12)
+        cell.detailTextLabel?.lineBreakMode = .byWordWrapping
         cell.accessoryView = UITheme.severityTag(riskLevelSeverity(f.level), width: 42)
         return cell
     }
@@ -925,6 +929,17 @@ final class DynamicAnalysisDetailVC: UITableViewController {
             "run_dynamic.sh — 一键编排（mitmproxy + frida + pytest）",
             "README.txt — 步骤与免责声明"
         ]))
+
+        // 模拟动态执行轨迹（沙盒内演示）
+        let sim = DynamicSimulator.simulate(result)
+        if !sim.isEmpty {
+            sections.append(("模拟动态执行轨迹（沙盒内演示）", sim.map { "\($0.time) [\($0.tag)] \($0.detail)" }))
+            let simScore = DynamicSimulator.simulatedScore(result)
+            sections.append(("模拟动态判定（含运行行为加成）", [
+                "模拟评分 \(simScore.points)/100 · \(simScore.verdict)",
+                "说明：静态分 \(result.score) + 模拟高风险行为加成；真实判定以 frida/mitmproxy 采集为准"
+            ]))
+        }
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { enabled ? sections.count + 1 : 1 }

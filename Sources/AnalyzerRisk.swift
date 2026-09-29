@@ -459,6 +459,13 @@ enum AnalyzerRisk {
             score += 2
         }
 
+        // ---- 病毒审查库（恶意特征签名）----
+        let malware = AnalyzerMalware.scan(strings: strings)
+        for m in malware {
+            findings.append(m)
+            score += m.points
+        }
+
         let capped = min(score, 100)
         return (findings.sorted { $0.points > $1.points }, capped)
     }
