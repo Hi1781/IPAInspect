@@ -121,6 +121,33 @@ final class OverviewDetailVC: UIViewController {
         ])
         stack.addArrangedSubview(card(header))
 
+        // 综合文字描述报告
+        let repV = UIView()
+        let repTitle = UITheme.makeLabel("综合文字描述报告", size: 14, weight: .semibold)
+        repTitle.translatesAutoresizingMaskIntoConstraints = false
+        repV.addSubview(repTitle)
+        let repBody = UITheme.makeLabel(ReportGenerator.summary(result), size: 13)
+        repBody.numberOfLines = 0
+        repBody.translatesAutoresizingMaskIntoConstraints = false
+        repV.addSubview(repBody)
+        let repCopy = UIButton(type: .system)
+        repCopy.setTitle("复制报告", for: .normal)
+        repCopy.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        repCopy.addTarget(self, action: #selector(copyReport), for: .touchUpInside)
+        repCopy.translatesAutoresizingMaskIntoConstraints = false
+        repV.addSubview(repCopy)
+        NSLayoutConstraint.activate([
+            repTitle.topAnchor.constraint(equalTo: repV.topAnchor),
+            repTitle.leadingAnchor.constraint(equalTo: repV.leadingAnchor),
+            repBody.topAnchor.constraint(equalTo: repTitle.bottomAnchor, constant: 8),
+            repBody.leadingAnchor.constraint(equalTo: repV.leadingAnchor),
+            repBody.trailingAnchor.constraint(equalTo: repV.trailingAnchor),
+            repCopy.topAnchor.constraint(equalTo: repBody.bottomAnchor, constant: 10),
+            repCopy.trailingAnchor.constraint(equalTo: repV.trailingAnchor),
+            repCopy.bottomAnchor.constraint(equalTo: repV.bottomAnchor)
+        ])
+        stack.addArrangedSubview(card(repV))
+
         // 哈希卡片
         let hashV = UIView()
         let hashTitle = UITheme.makeLabel("文件哈希", size: 14, weight: .semibold)
@@ -215,6 +242,13 @@ final class OverviewDetailVC: UIViewController {
             n.textColor = .systemOrange
             stack.addArrangedSubview(card(n))
         }
+    }
+
+    @objc private func copyReport() {
+        UIPasteboard.general.string = ReportGenerator.summary(result)
+        let a = UIAlertController(title: "已复制", message: "综合文字描述报告已复制到剪贴板", preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
     }
 }
 

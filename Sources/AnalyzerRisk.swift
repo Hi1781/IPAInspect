@@ -466,6 +466,19 @@ enum AnalyzerRisk {
             score += m.points
         }
 
+        // ---- 已知 C2 基础设施（外部 IOC 库）----
+        if let c2 = AnalyzerMalware.scanC2(urls: urls, strings: strings) {
+            findings.append(c2)
+            score += c2.points
+        }
+
+        // ---- 复合评分加权：恶意特征命中时强化判定 ----
+        let maliciousHits = malware.filter { $0.level == .malicious }.count
+        if maliciousHits >= 1 {
+            // 已纳入各自分数；额外加权重以体现多维度证据叠加
+            score += min(maliciousHits * 4, 12)
+        }
+
         let capped = min(score, 100)
         return (findings.sorted { $0.points > $1.points }, capped)
     }
